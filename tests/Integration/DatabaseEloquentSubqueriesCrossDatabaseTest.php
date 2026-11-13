@@ -4,238 +4,44 @@ namespace Hoyvoy\Tests\Integration;
 
 use Hoyvoy\CrossDatabase\Eloquent\Model as Model;
 use Hoyvoy\Tests\TestCase;
+use LogicException;
 
 class DatabaseEloquentSubqueriesCrossDatabaseTest extends TestCase
 {
-    public function testWhereHasAcrossDatabaseConnection()
+    public static function relations(): array
     {
-        // Test MySQL cross database subquery
-        $query = UserMysql::whereHas('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from `users` where exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?)', $query->toSql());
+        $like = fn ($q) => $q->where('name', 'like', '%a%');
 
-        // Test MySQL same database subquery
-        $query = UserMysql::whereHas('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from `users` where exists (select * from `posts` where `users`.`id` = `posts`.`user_id` and `name` like ?)', $query->toSql());
-
-        // Test PostgreSQL cross database subquery
-        $query = UserPgsql::whereHas('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where exists (select * from "pgsql2"."orders" where "users"."id" = "orders"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test PostgreSQL same database subquery
-        $query = UserPgsql::whereHas('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where exists (select * from "posts" where "users"."id" = "posts"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlsrv::whereHas('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from [users] where exists (select * from [sqlsrv2].[orders] where [users].[id] = [orders].[user_id] and [name] like ?)', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlsrv::whereHas('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from [users] where exists (select * from [posts] where [users].[id] = [posts].[user_id] and [name] like ?)', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlite::whereHas('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where exists (select * from "orders" where "users"."id" = "orders"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlite::whereHas('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where exists (select * from "posts" where "users"."id" = "posts"."user_id" and "name" like ?)', $query->toSql());
+        return [
+            'mysql whereHas cross'   => [fn () => UserMysql::whereHas('orders', $like), 'select * from `users` where exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?)'],
+            'mysql whereHas same'    => [fn () => UserMysql::whereHas('posts', $like), 'select * from `users` where exists (select * from `posts` where `users`.`id` = `posts`.`user_id` and `name` like ?)'],
+            'mysql has cross'        => [fn () => UserMysql::has('orders'), 'select * from `users` where exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`)'],
+            'mysql has count cross'  => [fn () => UserMysql::has('orders', '>=', 2), 'select * from `users` where (select count(*) from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`) >= 2'],
+            'mysql doesntHave cross' => [fn () => UserMysql::doesntHave('orders'), 'select * from `users` where not exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`)'],
+            'mysql whereDoesntHave'  => [fn () => UserMysql::whereDoesntHave('orders', $like), 'select * from `users` where not exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?)'],
+            'mysql withCount cross'  => [fn () => UserMysql::withCount(['orders' => $like]), 'select `users`.*, (select count(*) from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?) as `orders_count` from `users`'],
+            'mysql withCount alias'  => [fn () => UserMysql::withCount('orders as o'), 'select `users`.*, (select count(*) from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`) as `o` from `users`'],
+            'mysql withSum cross'    => [fn () => UserMysql::withSum('orders', 'total'), 'select `users`.*, (select sum(`orders`.`total`) from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`) as `orders_sum_total` from `users`'],
+            'mysql withCount same'   => [fn () => UserMysql::withCount('posts'), 'select `users`.*, (select count(*) from `posts` where `users`.`id` = `posts`.`user_id`) as `posts_count` from `users`'],
+            'sqlsrv has cross'       => [fn () => UserSqlsrv::has('orders'), 'select * from [users] where exists (select * from [sqlsrv2].[dbo].[orders] where [users].[id] = [orders].[user_id])'],
+            'sqlsrv has same'        => [fn () => UserSqlsrv::has('posts'), 'select * from [users] where exists (select * from [posts] where [users].[id] = [posts].[user_id])'],
+            'sqlsrv withCount cross' => [fn () => UserSqlsrv::withCount('orders'), 'select [users].*, (select count(*) from [sqlsrv2].[dbo].[orders] where [users].[id] = [orders].[user_id]) as [orders_count] from [users]'],
+            'pgsql has same'         => [fn () => UserPgsql::has('posts'), 'select * from "users" where exists (select * from "posts" where "users"."id" = "posts"."user_id")'],
+            'sqlite has (untouched)' => [fn () => UserSqlite::has('orders'), 'select * from "users" where exists (select * from "orders" where "users"."id" = "orders"."user_id")'],
+        ];
     }
 
-    public function testHasAcrossDatabaseConnection()
+    #[\PHPUnit\Framework\Attributes\DataProvider('relations')]
+    public function testSql(\Closure $query, string $sql)
     {
-        // Test MySQL cross database subquery
-        $query = UserMysql::has('orders');
-        $this->assertEquals('select * from `users` where exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`)', $query->toSql());
-
-        // Test MySQL same database subquery
-        $query = UserMysql::has('posts');
-        $this->assertEquals('select * from `users` where exists (select * from `posts` where `users`.`id` = `posts`.`user_id`)', $query->toSql());
-
-        // Test PostgreSQL cross database subquery
-        $query = UserPgsql::has('orders');
-        $this->assertEquals('select * from "users" where exists (select * from "pgsql2"."orders" where "users"."id" = "orders"."user_id")', $query->toSql());
-
-        // Test PostgreSQL same database subquery
-        $query = UserPgsql::has('posts');
-        $this->assertEquals('select * from "users" where exists (select * from "posts" where "users"."id" = "posts"."user_id")', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlsrv::has('orders');
-        $this->assertEquals('select * from [users] where exists (select * from [sqlsrv2].[orders] where [users].[id] = [orders].[user_id])', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlsrv::has('posts');
-        $this->assertEquals('select * from [users] where exists (select * from [posts] where [users].[id] = [posts].[user_id])', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlite::has('orders');
-        $this->assertEquals('select * from "users" where exists (select * from "orders" where "users"."id" = "orders"."user_id")', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlite::has('posts');
-        $this->assertEquals('select * from "users" where exists (select * from "posts" where "users"."id" = "posts"."user_id")', $query->toSql());
+        $this->assertSame($sql, $query()->toSql());
     }
 
-    public function testDoesntHasAcrossDatabaseConnection()
+    public function testPostgresCrossDatabaseThrows()
     {
-        // Test MySQL cross database subquery
-        $query = UserMysql::doesntHave('orders');
-        $this->assertEquals('select * from `users` where not exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id`)', $query->toSql());
+        $this->expectException(LogicException::class);
 
-        // Test MySQL same database subquery
-        $query = UserMysql::doesntHave('posts');
-        $this->assertEquals('select * from `users` where not exists (select * from `posts` where `users`.`id` = `posts`.`user_id`)', $query->toSql());
-
-        // Test PostgreSQL cross database subquery
-        $query = UserPgsql::doesntHave('orders');
-        $this->assertEquals('select * from "users" where not exists (select * from "pgsql2"."orders" where "users"."id" = "orders"."user_id")', $query->toSql());
-
-        // Test PostgreSQL same database subquery
-        $query = UserPgsql::doesntHave('posts');
-        $this->assertEquals('select * from "users" where not exists (select * from "posts" where "users"."id" = "posts"."user_id")', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlsrv::doesntHave('orders');
-        $this->assertEquals('select * from [users] where not exists (select * from [sqlsrv2].[orders] where [users].[id] = [orders].[user_id])', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlsrv::doesntHave('posts');
-        $this->assertEquals('select * from [users] where not exists (select * from [posts] where [users].[id] = [posts].[user_id])', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlite::doesntHave('orders');
-        $this->assertEquals('select * from "users" where not exists (select * from "orders" where "users"."id" = "orders"."user_id")', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlite::doesntHave('posts');
-        $this->assertEquals('select * from "users" where not exists (select * from "posts" where "users"."id" = "posts"."user_id")', $query->toSql());
-    }
-
-    public function testWhereDoesntHaveAcrossDatabaseConnection()
-    {
-        // Test MySQL cross database subquery
-        $query = UserMysql::whereDoesntHave('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from `users` where not exists (select * from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?)', $query->toSql());
-
-        // Test MySQL same database subquery
-        $query = UserMysql::whereDoesntHave('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from `users` where not exists (select * from `posts` where `users`.`id` = `posts`.`user_id` and `name` like ?)', $query->toSql());
-
-        // Test PostgreSQL cross database subquery
-        $query = UserPgsql::whereDoesntHave('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where not exists (select * from "pgsql2"."orders" where "users"."id" = "orders"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test PostgreSQL same database subquery
-        $query = UserPgsql::whereDoesntHave('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where not exists (select * from "posts" where "users"."id" = "posts"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlsrv::whereDoesntHave('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from [users] where not exists (select * from [sqlsrv2].[orders] where [users].[id] = [orders].[user_id] and [name] like ?)', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlsrv::whereDoesntHave('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from [users] where not exists (select * from [posts] where [users].[id] = [posts].[user_id] and [name] like ?)', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlite::whereDoesntHave('orders', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where not exists (select * from "orders" where "users"."id" = "orders"."user_id" and "name" like ?)', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlite::whereDoesntHave('posts', function ($query) {
-            $query->where('name', 'like', '%a%');
-        });
-        $this->assertEquals('select * from "users" where not exists (select * from "posts" where "users"."id" = "posts"."user_id" and "name" like ?)', $query->toSql());
-    }
-
-    public function testWithCountAcrossDatabaseConnection()
-    {
-        // Test MySQL cross database subquery
-        $query = UserMysql::withCount(['orders' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select `users`.*, (select count(*) from `mysql2`.`orders` where `users`.`id` = `orders`.`user_id` and `name` like ?) as `orders_count` from `users`', $query->toSql());
-
-        // Test MySQL same database subquery
-        $query = UserMysql::withCount(['posts' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select `users`.*, (select count(*) from `posts` where `users`.`id` = `posts`.`user_id` and `name` like ?) as `posts_count` from `users`', $query->toSql());
-
-        // Test PostgreSQL cross database subquery
-        $query = UserPgsql::withCount(['orders' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select "users".*, (select count(*) from "pgsql2"."orders" where "users"."id" = "orders"."user_id" and "name" like ?) as "orders_count" from "users"', $query->toSql());
-
-        // Test PostgreSQL same database subquery
-        $query = UserPgsql::withCount(['posts' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select "users".*, (select count(*) from "posts" where "users"."id" = "posts"."user_id" and "name" like ?) as "posts_count" from "users"', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlsrv::withCount(['orders' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select [users].*, (select count(*) from [sqlsrv2].[orders] where [users].[id] = [orders].[user_id] and [name] like ?) as [orders_count] from [users]', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlsrv::withCount(['posts' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select [users].*, (select count(*) from [posts] where [users].[id] = [posts].[user_id] and [name] like ?) as [posts_count] from [users]', $query->toSql());
-
-        // Test SQL Server cross database subquery
-        $query = UserSqlite::withCount(['orders' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select "users".*, (select count(*) from "orders" where "users"."id" = "orders"."user_id" and "name" like ?) as "orders_count" from "users"', $query->toSql());
-
-        // Test SQL Server same database subquery
-        $query = UserSqlite::withCount(['posts' => function ($query) {
-            $query->where('name', 'like', '%a%');
-        },
-        ]);
-        $this->assertEquals('select "users".*, (select count(*) from "posts" where "users"."id" = "posts"."user_id" and "name" like ?) as "posts_count" from "users"', $query->toSql());
+        UserPgsql::has('orders');
     }
 }
 

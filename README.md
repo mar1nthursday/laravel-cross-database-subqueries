@@ -1,40 +1,20 @@
-[![Build Status](https://travis-ci.org/hoyvoy/laravel-cross-database-subqueries.svg?branch=master)](https://travis-ci.org/hoyvoy/laravel-cross-database-subqueries) [![Codacy Badge](https://api.codacy.com/project/badge/Grade/5ef152edf13d4440a9ccacf942bbecf9)](https://www.codacy.com/app/mario-hoyvoy/laravel-cross-database-subqueries?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=hoyvoy/laravel-cross-database-subqueries&amp;utm_campaign=Badge_Grade) [![StyleCI](https://styleci.io/repos/120466504/shield?branch=master)](https://styleci.io/repos/120466504)
-
 # Laravel Cross database subqueries
-Eloquent cross database compatibility in subqueries.
+Makes Eloquent relation subqueries work when the related model lives in another database on the same server.
 
-# Why do I need it?
-### To use the following Eloquent methods cross databases:
-* has
-* whereHas
-* doesntHave 
-* whereDoesntHave
-* withCount
+Works with: `has`, `whereHas`, `doesntHave`, `whereDoesntHave`, `withCount`, `withSum/Avg/Min/Max/Exists`.
 
 # Installation
-Install with composer
 ~~~
 composer require hoyvoy/laravel-cross-database-subqueries
 ~~~
-
-From Laravel 5.5 onwards, it's possible to take advantage of auto-discovery of the service provider.
-For Laravel versions before 5.5, you must register the service provider in your config/app.php
-
-~~~
-Hoyvoy\CrossDatabase\CrossDatabaseServiceProvider::class,
-~~~
+No service provider needed. Requires PHP 8.2+, Laravel 11/12.
 
 # Usage
-In your `Models` extends from:
-* Hoyvoy\CrossDatabase\Eloquent\Model
+Extend `Hoyvoy\CrossDatabase\Eloquent\Model` in your models. When the parent and related models use
+connections with different databases, the subquery selects from `db.table` (SQL Server: `db.dbo.table`).
 
-# Supported PHP Versions
-* \>=7.0
-
-# Supported Databases
-* MySQL
-* PostgreSQL
-* SQL Server
-
-# Issues & Contributing
-If you find an issue please report it or contribute by submitting a pull request.
+# Limits
+* MySQL/MariaDB and SQL Server only. PostgreSQL cannot query across databases, so a `LogicException` is thrown (use schemas, dblink or postgres_fdw). SQLite is left untouched.
+* Both connections must point at the same server.
+* Pivot tables of `belongsToMany`/`hasManyThrough` and table prefixes are not rewritten.
+* A table you already qualified yourself (`db.table`) is left as is.
